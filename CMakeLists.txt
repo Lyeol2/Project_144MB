@@ -17,7 +17,5 @@ if(MSVC)
     add_compile_options(/utf-8)
 endif()
 
-
-
 # 하위 폴더 추가
 add_subdirectory(source)

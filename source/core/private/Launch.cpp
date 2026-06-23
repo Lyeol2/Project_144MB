@@ -17,6 +17,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam,
 }
 } // namespace
 
+#include "EditorSerializer.h"
+#include "EditorScene.h"
+#include "EditorGameObject.h"
+#include "Scene.h"
+#include "TileMap.h"
+#include "Player.h"
+#include "Texture.h"
+#include "Sprite.h"
+#include <unordered_map>
+#include <fstream>
+#include <string>
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
   WNDCLASSEXW windowClass{};
   windowClass.cbSize = sizeof(windowClass);
@@ -31,13 +43,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     return 1;
   }
 
-  // 클라이언트 영역(실제 게임 화면) 크기를 800x600으로 맞추기 위해 윈도우 크기 계산
-  RECT rect = { 0, 0, 800, 600 };
-  AdjustWindowRectEx(&rect, WS_POPUP, FALSE, 0);
+  RECT rect = { 0, 0, 960, 720 };
+  AdjustWindowRectEx(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0);
   int windowWidth = rect.right - rect.left;
   int windowHeight = rect.bottom - rect.top;
 
-  HWND window = CreateWindowExW(0, kWindowClassName, L"Project 144MB", WS_POPUP,
+  HWND window = CreateWindowExW(0, kWindowClassName, L"Project 144MB", WS_OVERLAPPEDWINDOW,
                                 CW_USEDEFAULT, CW_USEDEFAULT, windowWidth, windowHeight,
                                 nullptr, nullptr, instance, nullptr);
 
@@ -49,8 +60,127 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
   UpdateWindow(window);
 
   Application app;
-  if (!app.Initialize(800, 600)) {
+  if (!app.Initialize(320, 240)) {
     return 1;
+  }
+
+  // Load Scene from level1_build.dat
+  auto editorScene = std::make_shared<EditorScene>();
+  if (EditorSerializer::LoadFromFile(editorScene, "assets/scenes/level1_build.dat"))
+  {
+      Scene* scene = app.GetCurrentScene();
+      
+      // 1. Load Brushes into Texture and Sprite
+      std::unordered_map<std::string, Texture*> texCache;
+      std::unordered_map<int, Sprite*> brushSprites;
+      auto& brushes = editorScene->GetTileBrushes();
+      for (size_t i = 0; i < brushes.size(); ++i)
+      {
+          if (brushes[i].spritePath[0] != '\0' && std::string(brushes[i].spritePath) != "NONE")
+          {
+              std::string path = brushes[i].spritePath;
+              while (!path.empty() && (path.back() == '\r' || path.back() == '\n' || path.back() == ' '))
+                  path.pop_back();
+
+              if (path.ends_with(".sprite"))
+              {
+                  std::ifstream ifs(path);
+                  if (ifs.is_open())
+                  {
+                      std::string line;
+                      std::string texPath;
+                      int srcX = 0, srcY = 0, width = 0, height = 0;
+                      while (std::getline(ifs, line))
+                      {
+                          while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' '))
+                              line.pop_back();
+
+                          if (line.starts_with("Texture=")) texPath = line.substr(8);
+                          else if (line.starts_with("SrcX=")) srcX = std::stoi(line.substr(5));
+                          else if (line.starts_with("SrcY=")) srcY = std::stoi(line.substr(5));
+                          else if (line.starts_with("Width=")) width = std::stoi(line.substr(6));
+                          else if (line.starts_with("Height=")) height = std::stoi(line.substr(7));
+                      }
+                      
+                      Texture* tex = nullptr;
+                      if (texCache.count(texPath)) {
+                          tex = texCache[texPath];
+                      } else {
+                          tex = new Texture();
+                          if (tex->LoadFromFile(texPath)) {
+                              texCache[texPath] = tex;
+                          } else {
+                              delete tex;
+                              tex = nullptr;
+                          }
+                      }
+                      
+                      if (tex)
+                      {
+                          Sprite* spr = new Sprite();
+                          spr->texture = tex;
+                          spr->srcX = srcX;
+                          spr->srcY = srcY;
+                          spr->width = width;
+                          spr->height = height;
+                          brushSprites[i] = spr;
+                      }
+                  }
+              }
+              else
+              {
+                  Texture* tex = new Texture();
+                  if (tex->LoadFromFile(path))
+                  {
+                      Sprite* spr = new Sprite();
+                      spr->texture = tex;
+                      spr->srcX = 0;
+                      spr->srcY = 0;
+                      spr->width = tex->GetWidth();
+                      spr->height = tex->GetHeight();
+                      brushSprites[i] = spr;
+                  }
+                  else { delete tex; }
+              }
+          }
+      }
+
+      // 2. Load TileMap
+      auto editorTileMap = editorScene->GetTileMap();
+      auto gameTileMap = scene->GetTileMap();
+      if (editorTileMap && gameTileMap)
+      {
+          for (const auto& pair : editorTileMap->GetTiles())
+          {
+              TileData td = pair.second;
+              if (brushSprites.count(td.brushId))
+              {
+                  td.sprite = brushSprites[td.brushId];
+              }
+              gameTileMap->SetTile(pair.first.first, pair.first.second, td);
+          }
+      }
+
+      // 3. Load GameObjects
+      for (auto& obj : editorScene->GetGameObjects())
+      {
+          if (obj->GetType() == EditorObjectType::Player)
+          {
+              Player* player = new Player();
+              // Convert grid coordinates to world pixel coordinates (1 grid = 16 pixels)
+              player->x = obj->GetX() * 16.0f;
+              player->y = obj->GetY() * 16.0f;
+              
+              Texture* tex = new Texture();
+              tex->LoadFromFile("assets/black16.png");
+              player->sprite = new Sprite();
+              player->sprite->texture = tex;
+              player->sprite->width = 16;
+              player->sprite->height = 16;
+
+              scene->AddEntity(player);
+          }
+      }
   }
 
   MSG message{};

@@ -24,4 +24,12 @@ public:
 
   // 완성된 백버퍼를 실제 윈도우 화면에 출력
   void Present(HWND hwnd);
+
+  void SetCamera(int x, int y) { m_cameraX = x; m_cameraY = y; }
+  int GetCameraX() const { return m_cameraX; }
+  int GetCameraY() const { return m_cameraY; }
+
+protected:
+  int m_cameraX = 0;
+  int m_cameraY = 0;
 };

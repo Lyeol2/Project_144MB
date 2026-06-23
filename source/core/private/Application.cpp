@@ -2,7 +2,7 @@
 #include "Input.h"
 #include "Renderer.h"
 #include "Scene.h"
-#include "Time.h"
+#include "GameTime.h"
 
 // 나중에 Player 등 생성할 때 필요
 #include "Player.h"
@@ -20,23 +20,8 @@ bool Application::Initialize(int width, int height) {
 
   m_renderer = new Renderer(width, height);
 
-  // 임시 씬 생성 및 플레이어 배치
+  // 씬 생성
   m_currentScene = new Scene();
-
-  Player *player = new Player();
-  player->x = width / 2.0f;
-  player->y = height / 2.0f;
-
-  // 텍스처 로드 및 스프라이트 설정
-  Texture *tex = new Texture();
-  tex->LoadFromFile("black16.png");
-
-  player->sprite = new Sprite();
-  player->sprite->texture = tex;
-  player->sprite->width = 16;
-  player->sprite->height = 16;
-
-  m_currentScene->AddEntity(player);
   m_currentScene->Initialize();
 
   return true;
@@ -52,6 +37,22 @@ void Application::Run() {
 
   if (m_currentScene) {
     m_currentScene->Update(Time::GetDeltaTime());
+
+    // Simple Camera Follow Logic
+    if (m_renderer && !m_currentScene->GetEntities().empty()) {
+      // Find the player (assume it's the first entity or find it by type)
+      // Since Player is an Entity, we can dynamic_cast or just use the first entity
+      for (Entity* entity : m_currentScene->GetEntities()) {
+          // In this simple engine, we can check if it has a sprite and just follow the first entity.
+          // Or we can assume it's the player if it's the first one. Let's just follow the first entity for now.
+          if (entity->sprite) {
+              int camX = (int)entity->x - m_renderer->m_width / 2 + entity->sprite->width / 2;
+              int camY = (int)entity->y - m_renderer->m_height / 2 + entity->sprite->height / 2;
+              m_renderer->SetCamera(camX, camY);
+              break;
+          }
+      }
+    }
   }
 }
 

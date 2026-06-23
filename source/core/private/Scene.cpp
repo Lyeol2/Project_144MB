@@ -3,6 +3,7 @@
 
 Scene::Scene()
 {
+    m_tileMap = new TileMap();
 }
 
 Scene::~Scene()
@@ -12,10 +13,13 @@ Scene::~Scene()
 		delete entity;
 	}
 	m_entities.clear();
+    delete m_tileMap;
 }
 
 void Scene::Initialize()
 {
+    if (m_tileMap) m_tileMap->Initialize();
+
 	for (Entity* entity : m_entities)
 	{
 		entity->Initialize();
@@ -35,6 +39,8 @@ void Scene::Update(float deltaTime)
 
 void Scene::Render(Renderer* renderer)
 {
+    if (m_tileMap) m_tileMap->Render(renderer);
+
 	for (Entity* entity : m_entities)
 	{
 		if (entity->IsActive())
